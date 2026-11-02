@@ -1,0 +1,17 @@
+{
+  "name": "roketman",
+  "version": "0.2.0",
+  "private": true,
+  "description": "폭탄 키우기 — 미사일을 키워 3D 복셀 도시를 무너뜨리는 성장형 웹 게임",
+  "scripts": {
+    "start": "node tools/serve.js 8123",
+    "check": "node tools/check.js",
+    "smoke": "node tools/smoke.js",
+    "format": "prettier --write \"js/*.js\" \"css/*.css\" index.html",
+    "format:check": "prettier --check \"js/*.js\" \"css/*.css\" index.html"
+  },
+  "devDependencies": {
+    "playwright": "1.63.0",
+    "prettier": "3.9.10"
+  }
+}
