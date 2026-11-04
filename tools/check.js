@@ -20,5 +20,14 @@ try {
   ok = false;
   console.error('파일 간 충돌(최상위 이름 중복 등):', e.message);
 }
+// 실험실 스크립트는 게임 스크립트 뒤가 아니라 앞에서 불러오고, 전부 함수 안에 있어 이름이 겹치지 않는다. 문법만 본다.
+for (const f of ['vfx-lab.js', 'vfx-shots.js'].map(f => path.join(__dirname, f))) {
+  try {
+    new vm.Script(fs.readFileSync(f, 'utf8'), { filename: f });
+  } catch (e) {
+    ok = false;
+    console.error('문법 오류:', path.basename(f), e.message);
+  }
+}
 console.log(ok ? '구문 검사 통과' : '구문 검사 실패');
 process.exit(ok ? 0 : 1);

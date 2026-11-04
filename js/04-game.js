@@ -228,6 +228,7 @@ function clearFx() {
   missiles.length = 0;
   pending.length = 0;
   boomLight.intensity = 0;
+  clearFeel();
   clearLabels();
   comboN = 0;
   comboT = 0;
@@ -639,7 +640,8 @@ $('#reset').addEventListener('click', () => {
 /* ================= 메인 루프 ================= */
 let last = performance.now();
 function frame(now) {
-  const dt = Math.min(0.05, (now - last) / 1000);
+  const rdt = Math.min(0.05, (now - last) / 1000), // 실제로 흐른 시간
+    dt = updFeel(rdt); // 게임 시간: 히트스톱이면 0, 슬로모션이면 느리게 흐른다
   last = now;
   time += dt;
   if (phase === 'pad') updatePad(dt);
@@ -685,9 +687,10 @@ function frame(now) {
     }
   }
   if (phase !== 'launch') {
-    rig.shake *= Math.pow(0.05, dt);
+    rig.shake *= Math.pow(0.05, rdt);
     if (rig.shake < 0.01) rig.shake = 0;
   }
+  drawFeel();
   placeCamera();
   renderer.render(scene, camera);
   requestAnimationFrame(frame);

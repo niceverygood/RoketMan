@@ -302,7 +302,14 @@ function initAudio() {
       AC = new (window.AudioContext || window.webkitAudioContext)();
       master = AC.createGain();
       master.gain.value = 0.85;
-      master.connect(AC.destination);
+      // 폭발 소리를 여러 겹 쌓아도 찢어지지 않게, 큰 소리만 살짝 눌러 주는 리미터를 마지막에 둔다
+      const lim = AC.createDynamicsCompressor();
+      lim.threshold.value = -6;
+      lim.knee.value = 6;
+      lim.ratio.value = 8;
+      lim.attack.value = 0.003;
+      lim.release.value = 0.25;
+      master.connect(lim).connect(AC.destination);
       const len = AC.sampleRate * 3;
       NB = AC.createBuffer(1, len, AC.sampleRate);
       const d = NB.getChannelData(0);
@@ -351,10 +358,27 @@ function sBoom(R, big) {
   const t = AC.currentTime;
   if (!big && t - lastBoom < 0.06) return;
   lastBoom = t;
-  const v = Math.min(0.9, 0.2 + R / 14);
-  noise({ f0: Math.min(3600, 500 + R * 170), f1: 45, dur: Math.min(2.6, 0.5 + R * 0.09) * (big ? 1.7 : 1), vol: v });
-  tone({ f0: 115, f1: 28, dur: 0.45 + R * 0.02, vol: v * 0.9 });
+  const v = Math.min(0.9, 0.2 + R / 14),
+    pv = rand(0.9, 1.1); // 매번 음 높이를 ±10% 흔들어 같은 소리가 되풀이되는 느낌을 줄인다
+  // 세 겹: ① 딸깍(아주 짧고 높은 파열음, 귀가 "맞았다"를 먼저 알아챈다) ② 쿵(낮게 떨어지는 음) ③ 우르르(낮은 잡음 꼬리)
+  noise({ f0: 6000 * pv, f1: 1800 * pv, dur: 0.06, vol: v * 0.5, type: 'bandpass', q: 0.9, attack: 0.002 });
+  tone({ f0: 115 * pv, f1: 28, dur: 0.45 + R * 0.02, vol: v * 0.9 });
+  noise({
+    f0: Math.min(3600, 500 + R * 170) * pv,
+    f1: 45,
+    dur: Math.min(2.6, 0.5 + R * 0.09) * (big ? 1.7 : 1),
+    vol: v,
+  });
   if (big) noise({ f0: 200, f1: 30, dur: 3.6, vol: 0.75, attack: 0.05 });
+}
+/* 휴대폰 진동(p: 밀리초 또는 [울림, 쉼, 울림…]). 소리를 끄면 진동도 끈다. 따로 끄는 설정은 아직 없다.
+ * 화면을 한 번도 누르지 않았으면 브라우저가 막고 경고를 남기므로 아예 부르지 않는다 */
+function buzz(p) {
+  const n = navigator;
+  if (muted || !n.vibrate || (n.userActivation && !n.userActivation.hasBeenActive)) return;
+  try {
+    n.vibrate(p);
+  } catch (e) {}
 }
 function sIgnite() {
   if (!canPlay()) return;

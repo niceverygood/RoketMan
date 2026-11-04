@@ -55,7 +55,10 @@ const VIEWPORTS = [
       const before = await page.evaluate(() => ({ pts: S.pts, lv: S.lv.radius }));
       await page.locator('.buy[data-id="radius"]').click();
       const after = await page.evaluate(() => ({ pts: S.pts, lv: S.lv.radius }));
-      check(after.lv === before.lv + 1 && after.pts < before.pts, `${tag} 폭발 반경 구매 → Lv ${after.lv}, 포인트 차감`);
+      check(
+        after.lv === before.lv + 1 && after.pts < before.pts,
+        `${tag} 폭발 반경 구매 → Lv ${after.lv}, 포인트 차감`,
+      );
 
       await page.locator('#go').click();
       check(
@@ -76,16 +79,79 @@ const VIEWPORTS = [
       const hit = await page.evaluate(() => ({ blocks: destroyedVox, score: Math.floor(run.score) }));
       check(hit.blocks > 0 && hit.score > 0, `${tag} 탄두 명중 → 블록 ${hit.blocks}개 파괴, +${hit.score}P`);
 
+      // 손맛(02-engine.js FEEL): 명중 뒤 히트스톱 · 섬광 · 조명 낙차가 모두 제자리로 돌아오고, 새 명중에는 다시 켜지는지
+      const settled = await page
+        .waitForFunction(
+          () =>
+            FEEL.stop <= 0 &&
+            FEEL.slow <= 0 &&
+            !FEEL.flash &&
+            !FEEL.dip &&
+            $('#flash').hidden &&
+            sun.intensity === lightBase.sun,
+          null,
+          { timeout: 20000 },
+        )
+        .then(
+          () => true,
+          () => false,
+        );
+      check(settled, `${tag} 손맛: 명중 뒤 멈춤 · 섬광 · 조명이 제자리로`);
+      const feel = await page.evaluate(() => {
+        boomMissile({ kind: 'war', x: 0, y: 1, z: 0, R: 4, P: 1, pierce: 0, acc: 0 });
+        return { stop: FEEL.stop, trauma: FEEL.trauma, flash: FEEL.flash, dip: FEEL.dip, kick: FEEL.kickV };
+      });
+      check(
+        feel.stop > 0 && feel.trauma > 0 && feel.flash > 0 && feel.dip > 0 && feel.kick > 0,
+        `${tag} 손맛: 탄두가 맞으면 히트스톱 ${Math.round(feel.stop * 1000)}ms · 흔들림 · 섬광 · 카메라 밀림`,
+      );
+
       await page.evaluate(() => endRun());
       check(await page.locator('#result').isVisible(), `${tag} 작전 보고서 표시`);
       await page.locator('#toLab').click();
       await page.waitForFunction(() => phase === 'pad', null, { timeout: 20000 });
       check(await page.locator('#panel').isVisible(), `${tag} 연구실 복귀`);
       check(
+        await page.evaluate(() => !FEEL.trauma && FEEL.stop <= 0 && !FEEL.flash && $('#flash').hidden),
+        `${tag} 손맛: 연구실로 오면 흔들림 · 섬광 초기화`,
+      );
+      check(
         await page.evaluate(() => JSON.parse(localStorage.getItem('bomb-grow-lab-v1')).runs === 1),
         `${tag} 저장 반영 (출격 1회 기록)`,
       );
       check(errors.length === 0, `${tag} 콘솔 에러 0건${errors.length ? ' → ' + errors.slice(0, 3).join(' | ') : ''}`);
+
+      // VFX 실험실(tools/vfx-lab.html): 게임 화면을 그대로 불러와 폭발을 바로 터뜨리는 개발용 화면.
+      // 실험실은 requestAnimationFrame 을 붙잡아 자기 시계로 돌리므로 waitForFunction 은 시간 간격으로 확인한다.
+      const lab = await ctx.newPage();
+      const labErrors = [];
+      lab.on('pageerror', e => labErrors.push(e.message));
+      lab.on('console', m => m.type() === 'error' && labErrors.push(m.text()));
+      await lab.goto(`http://127.0.0.1:${PORT}/tools/vfx-lab.html`);
+      await lab.waitForFunction(() => window.LAB && LAB.ready && phase === 'strike', null, {
+        timeout: 30000,
+        polling: 100,
+      });
+      const saveBefore = await lab.evaluate(() => localStorage.getItem('bomb-grow-lab-v1'));
+      if (!(await lab.locator('#lab > details').evaluate(d => d.open)))
+        await lab.locator('#lab > details > summary').click();
+      await lab.locator('[data-lab="main"]').click();
+      const labHit = await lab.evaluate(() => destroyedVox);
+      check(labHit > 0, `${tag} VFX 실험실: 본탄 버튼 → 블록 ${labHit}개 파괴`);
+      await lab.locator('[data-lab="nuke"]').click();
+      await lab.waitForTimeout(500);
+      check(
+        (await lab.evaluate(() => localStorage.getItem('bomb-grow-lab-v1'))) === saveBefore,
+        `${tag} VFX 실험실: 진짜 저장은 그대로`,
+      );
+      check(
+        await lab.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+        `${tag} VFX 실험실: 가로 스크롤 없음`,
+      );
+      check(
+        labErrors.length === 0,
+        `${tag} VFX 실험실: 콘솔 에러 0건${labErrors.length ? ' → ' + labErrors.slice(0, 3).join(' | ') : ''}`,
+      );
       await ctx.close();
     }
   } finally {

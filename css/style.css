@@ -26,6 +26,10 @@ body {
   --ink: #141414;
   --glass: rgba(13, 19, 34, 0.74);
   --scrim: rgba(8, 12, 22, 0.8);
+  --flash-core: #fffaf0;
+  --flash-mid: rgba(255, 226, 168, 0.85);
+  --flash-edge: rgba(255, 190, 120, 0);
+  --flash-wash: rgba(255, 232, 190, 0.22);
   --f-display: 'Black Han Sans', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
   --f-body: 'IBM Plex Sans KR', 'Apple SD Gothic Neo', 'Malgun Gothic', system-ui, sans-serif;
   --f-mono: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace;
@@ -73,6 +77,24 @@ button:focus-visible {
   height: 100%;
   display: block;
   touch-action: none;
+}
+/* 명중 섬광. 투명도 · 중심(--fx, --fy: 맞은 곳의 화면 위치) · 반지름(--fr)은 feelHit · drawFeel(02-engine.js)이 정한다 */
+#flash {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0;
+  background:
+    radial-gradient(
+      circle var(--fr, 30vmax) at var(--fx, 50%) var(--fy, 50%),
+      var(--flash-core) 0,
+      var(--flash-core) 12%,
+      var(--flash-mid) 38%,
+      var(--flash-edge) 100%
+    ),
+    var(--flash-wash);
+  mix-blend-mode: screen;
 }
 #panel {
   width: 400px;
