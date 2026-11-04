@@ -261,7 +261,7 @@ body.full #panel {
   font-size: 14px;
   pointer-events: none;
 }
-/* 자동 그래픽 조정 같은 짧은 알림. 연구실에서는 위, 출격 중에는 아래 안내 문구 위에 뜬다 */
+/* 자동 그래픽 조정 같은 짧은 알림. 연구실에서는 위, 출격 중에는 아래 안내 문구보다 위에 뜬다 */
 #toast {
   position: absolute;
   z-index: 7;
@@ -283,7 +283,7 @@ body.full #panel {
 }
 body.full #toast {
   top: auto;
-  bottom: 64px;
+  bottom: 100px; /* 휴대폰에서 아래 안내 문구가 두 줄로 접혀도 겹치지 않게 */
 }
 /* ?fps 로 켜는 측정 표시 */
 #perf {
