@@ -213,12 +213,7 @@ function renderLab() {
 function clearFx() {
   FIRE.list.length = 0;
   SMOKE.list.length = 0;
-  for (let i = 0; i < MAXD; i++)
-    if (deb[i]) {
-      deb[i] = null;
-      debMesh.setMatrixAt(i, ZERO);
-    }
-  debMesh.instanceMatrix.needsUpdate = true;
+  clearDeb();
   for (const b of blasts) {
     scene.remove(b.m);
     b.m.material.dispose();
@@ -636,11 +631,100 @@ $('#reset').addEventListener('click', () => {
   }
 });
 
+/* ================= 그래픽 설정 · 끊김 감지 ================= */
+const GFX_NOTE = {
+  high: '그림자와 불꽃을 모두 그립니다.',
+  mid: '그림자와 불꽃을 줄여 조금 가볍게 그립니다.',
+  low: '그림자를 끄고 화면을 덜 선명하게 그립니다. 배터리를 덜 씁니다.',
+};
+function renderGfx() {
+  document
+    .querySelectorAll('#gfx button')
+    .forEach(b => b.setAttribute('aria-pressed', String(b.dataset.q === gfxSave.pref)));
+  $('#gfxNote').textContent =
+    gfxSave.pref === 'auto'
+      ? `화면이 끊기면 알아서 낮춥니다. 지금은 ${GFX[gfxLevel].name}이에요.`
+      : GFX_NOTE[gfxSave.pref];
+}
+let toastTimer = 0;
+function toast(t) {
+  const el = $('#toast');
+  el.textContent = t;
+  el.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    el.hidden = true;
+  }, 4000);
+}
+/* 자동 모드: 2초씩 평균 프레임을 재서 40fps 아래가 두 번 이어지면 한 단계 낮춘다.
+ * 다시 올리지는 않는다(오르내림 반복 방지). 1.5초 넘게 멈춘 프레임(탭 전환 등)은 빼고 잰다. */
+const fpsW = { t: 0, n: 0, slow: 0, hold: 1.5 };
+function resetFpsWatch() {
+  fpsW.t = fpsW.n = fpsW.slow = 0;
+  fpsW.hold = 1.5; // 품질을 바꾼 직후에는 셰이더를 다시 만드느라 잠깐 끊기니 쉬었다 잰다
+}
+function watchFps(raw) {
+  if (gfxSave.pref !== 'auto' || gfxLevel === 'low' || document.hidden || raw <= 0 || raw > 1.5) return;
+  if (fpsW.hold > 0) {
+    fpsW.hold -= raw;
+    return;
+  }
+  fpsW.t += raw;
+  fpsW.n++;
+  if (fpsW.t < 2) return;
+  const fps = fpsW.n / fpsW.t;
+  fpsW.t = fpsW.n = 0;
+  fpsW.slow = fps < 40 ? fpsW.slow + 1 : 0;
+  if (fpsW.slow < 2) return;
+  const next = GFX_ORDER[GFX_ORDER.indexOf(gfxLevel) + 1];
+  gfxSave.auto = next;
+  persistGfx();
+  applyGfx(next);
+  resetFpsWatch();
+  renderGfx();
+  toast(`화면이 끊겨서 그래픽을 ${GFX[next].name}으로 낮췄어요.`);
+}
+$('#gfx').addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  gfxSave.pref = b.dataset.q;
+  if (gfxSave.pref === 'auto') gfxSave.auto = ''; // 자동을 다시 고르면 처음부터 다시 잰다
+  persistGfx();
+  applyGfx(gfxStartLevel());
+  resetFpsWatch();
+  renderGfx();
+});
+/* 실기기 확인용 측정 표시: 주소 끝에 ?fps 를 붙이면 화면 오른쪽 아래에 나온다 */
+const perfEl = /[?&]fps\b/.test(location.search) ? document.createElement('div') : null;
+if (perfEl) {
+  perfEl.id = 'perf';
+  stageEl.appendChild(perfEl);
+}
+let perfN = 0,
+  perfAcc = 0;
+function updPerf(raw) {
+  if (!perfEl) return;
+  perfN++;
+  perfAcc += raw;
+  if (perfAcc < 0.5) return;
+  const r = renderer.info.render,
+    vox = cityGroup.visible
+      ? ` · 블록 ${fmt(voxMesh[0].count + voxMesh[1].count)}/${fmt(totalVox - destroyedVox)}`
+      : '';
+  perfEl.textContent =
+    `${Math.round(perfN / perfAcc)} fps · 그래픽 ${GFX[gfxLevel].name} · 그리기 ${r.calls}회 · 삼각형 ${fmt(r.triangles)}` +
+    `${vox} · 불꽃 ${FIRE.list.length} · 연기 ${SMOKE.list.length}`;
+  perfN = perfAcc = 0;
+}
+
 /* ================= 메인 루프 ================= */
 let last = performance.now();
 function frame(now) {
-  const dt = Math.min(0.05, (now - last) / 1000);
+  const raw = (now - last) / 1000,
+    dt = Math.min(0.05, raw);
   last = now;
+  watchFps(raw);
+  updPerf(raw);
   time += dt;
   if (phase === 'pad') updatePad(dt);
   else if (phase === 'launch') updateLaunch(dt);
@@ -672,18 +756,7 @@ function frame(now) {
       $('#combo').hidden = true;
     }
   }
-  for (let m = 0; m < 2; m++) {
-    const im = voxMesh[m];
-    if (!im) continue;
-    if (matDirty[m]) {
-      im.instanceMatrix.needsUpdate = true;
-      matDirty[m] = false;
-    }
-    if (colDirty[m] && im.instanceColor) {
-      im.instanceColor.needsUpdate = true;
-      colDirty[m] = false;
-    }
-  }
+  flushVox();
   if (phase !== 'launch') {
     rig.shake *= Math.pow(0.05, dt);
     if (rig.shake < 0.01) rig.shake = 0;
@@ -692,11 +765,12 @@ function frame(now) {
   renderer.render(scene, camera);
   requestAnimationFrame(frame);
 }
-resize();
+applyGfx(gfxStartLevel()); // 픽셀 비율·그림자를 정하고 resize() 까지 한다
 new ResizeObserver(resize).observe(stageEl);
 genPadEnv();
 setMuted(false);
 enterPad();
+renderGfx();
 if (document.fonts && document.fonts.ready)
   document.fonts.ready.then(() => {
     if (bodyTex) bodyTex.userData.redraw();

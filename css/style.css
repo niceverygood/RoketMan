@@ -261,6 +261,45 @@ body.full #panel {
   font-size: 14px;
   pointer-events: none;
 }
+/* 자동 그래픽 조정 같은 짧은 알림. 연구실에서는 위, 출격 중에는 아래 안내 문구보다 위에 뜬다 */
+#toast {
+  position: absolute;
+  z-index: 7;
+  left: 50%;
+  top: 12px;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: calc(100% - 24px);
+  text-align: center;
+  background: var(--glass);
+  border: 1px solid var(--line);
+  padding: 8px 14px;
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.45;
+  pointer-events: none;
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
+body.full #toast {
+  top: auto;
+  bottom: 100px; /* 휴대폰에서 아래 안내 문구가 두 줄로 접혀도 겹치지 않게 */
+}
+/* ?fps 로 켜는 측정 표시 */
+#perf {
+  position: absolute;
+  z-index: 7;
+  right: max(8px, env(safe-area-inset-right, 0px));
+  bottom: 8px;
+  max-width: calc(100% - 16px);
+  background: var(--glass);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-family: var(--f-mono);
+  font-size: 11px;
+  color: var(--fg);
+  pointer-events: none;
+}
 #banner {
   position: absolute;
   z-index: 6;
@@ -528,6 +567,35 @@ h2 {
 .cwarn {
   font-size: 12px;
   color: var(--hot);
+}
+.seg {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.seg button {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  padding: 7px 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.seg button[aria-pressed='true'] {
+  background: var(--hazard);
+  color: var(--ink);
+}
+.note {
+  margin: 8px 0 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--muted);
 }
 .ghost {
   background: transparent;
