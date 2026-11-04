@@ -43,6 +43,7 @@
         <div id="banner" hidden></div>
         <div id="combo" hidden></div>
         <div id="prompt" hidden></div>
+        <div id="toast" role="status" hidden></div>
         <div id="err" hidden></div>
       </div>
       <aside id="panel" aria-label="폭탄 연구실">
@@ -59,6 +60,14 @@
           <div class="upgs" id="upgs"></div>
           <h2 class="mt">목표 도시</h2>
           <div class="cities" id="cities"></div>
+          <h2 class="mt">그래픽</h2>
+          <div class="seg" id="gfx" role="group" aria-label="그래픽 품질">
+            <button type="button" data-q="auto" aria-pressed="true">자동</button>
+            <button type="button" data-q="high" aria-pressed="false">높음</button>
+            <button type="button" data-q="mid" aria-pressed="false">보통</button>
+            <button type="button" data-q="low" aria-pressed="false">낮음</button>
+          </div>
+          <p class="note" id="gfxNote"></p>
           <button class="ghost" id="reset" type="button">기록 초기화</button>
         </div>
         <div class="pfoot">

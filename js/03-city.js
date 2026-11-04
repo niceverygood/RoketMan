@@ -31,13 +31,23 @@ const ZERO = new THREE.Matrix4().makeScale(0, 0, 0),
   _m = new THREE.Matrix4(),
   _c = new THREE.Color(),
   _c2 = new THREE.Color(),
+  _cv = new THREE.Color(),
   _o = new THREE.Object3D();
 let city = CITIES[0],
   voxMesh = [null, null],
   totalVox = 1,
   destroyedVox = 0;
-const matDirty = [false, false],
-  colDirty = [false, false];
+/* 블록 인스턴스 관리
+ * - 겉면이 하나라도 드러난 블록만 인스턴스로 그린다. 사방이 막힌 블록은 vinst = -1 로 두었다가
+ *   이웃이 부서져 드러나면 그때 넣는다(showVox). 처음에는 건물 안쪽(종류 6)이 모두 여기에 해당한다.
+ * - 블록이 사라지면 맨 끝 인스턴스를 빈자리로 옮기고 count 를 줄인다(hideVox). 그래서 count = 지금 그리는 블록 수.
+ * - instV[m][i] 는 메시 m 의 i번 인스턴스가 어느 블록인지. vinst 의 역방향이다.
+ * - 바뀐 인스턴스 번호의 최소~최대만 모았다가 flushVox() 가 그 범위만 GPU 로 올린다. */
+const instV = [new Int32Array(NV), new Int32Array(NV)];
+const mLo = [1e9, 1e9],
+  mHi = [-1, -1],
+  cLo = [1e9, 1e9],
+  cHi = [-1, -1];
 let trees = [],
   treeMesh = null;
 const vIdx = (x, y, z) => (y * GZ + z) * GX + x;
@@ -66,6 +76,97 @@ function baseColor(v, out) {
   else if (k === K_IN) out.set(city.wall[ci % city.wall.length]).multiplyScalar(0.5);
   else out.set(city.wall[ci % city.wall.length]);
   return out.multiplyScalar(0.92 + hash(v) * 0.14);
+}
+/* 피해를 입은 만큼 어둡게 한 색 */
+function voxColor(v, out) {
+  return baseColor(v, out).lerp(_c2.set(0x2a2018), clamp(1 - vhp[v] / vmhp[v], 0, 1) * 0.75);
+}
+/* 여섯 면 중 하나라도 빈 칸(또는 격자 밖)에 닿으면 보이는 블록. 맨 아래층의 아랫면은 땅이 가린다 */
+function exposed(v) {
+  const x = v % GX,
+    z = ((v / GX) | 0) % GZ,
+    y = (v / LAYER) | 0;
+  return (
+    x === 0 ||
+    x === GX - 1 ||
+    z === 0 ||
+    z === GZ - 1 ||
+    y === GY - 1 ||
+    !vk[v - 1] ||
+    !vk[v + 1] ||
+    !vk[v - GX] ||
+    !vk[v + GX] ||
+    (y > 0 && !vk[v - LAYER]) ||
+    !vk[v + LAYER]
+  );
+}
+function markM(m, i) {
+  if (i < mLo[m]) mLo[m] = i;
+  if (i > mHi[m]) mHi[m] = i;
+}
+function markC(m, i) {
+  if (i < cLo[m]) cLo[m] = i;
+  if (i > cHi[m]) cHi[m] = i;
+}
+function showVox(v) {
+  const m = vm[v],
+    im = voxMesh[m],
+    i = im.count++,
+    p = vPos(v);
+  vinst[v] = i;
+  instV[m][i] = v;
+  _m.makeTranslation(p[0], p[1], p[2]);
+  im.setMatrixAt(i, _m);
+  im.setColorAt(i, voxColor(v, _cv));
+  markM(m, i);
+  markC(m, i);
+}
+function hideVox(v) {
+  const i = vinst[v];
+  if (i < 0) return;
+  const m = vm[v],
+    im = voxMesh[m],
+    last = --im.count;
+  vinst[v] = -1;
+  if (i === last) return;
+  const w = instV[m][last];
+  im.instanceMatrix.array.copyWithin(i * 16, last * 16, last * 16 + 16);
+  im.instanceColor.array.copyWithin(i * 3, last * 3, last * 3 + 3);
+  instV[m][i] = w;
+  vinst[w] = i;
+  markM(m, i);
+  markC(m, i);
+}
+function tintVox(v) {
+  const i = vinst[v];
+  if (i < 0) return; // 안 보이는 블록은 드러날 때 voxColor 로 색을 정한다
+  voxMesh[vm[v]].setColorAt(i, voxColor(v, _cv));
+  markC(vm[v], i);
+}
+const revealVox = j => {
+  if (vk[j] && vinst[j] < 0) showVox(j);
+};
+/* v 가 사라진 직후에 부른다. 가려져 있던 이웃을 드러낸다 */
+function revealAround(v) {
+  const x = v % GX,
+    z = ((v / GX) | 0) % GZ,
+    y = (v / LAYER) | 0;
+  if (x > 0) revealVox(v - 1);
+  if (x < GX - 1) revealVox(v + 1);
+  if (z > 0) revealVox(v - GX);
+  if (z < GZ - 1) revealVox(v + GX);
+  if (y > 0) revealVox(v - LAYER);
+  if (y < GY - 1) revealVox(v + LAYER);
+}
+function flushVox() {
+  for (let m = 0; m < 2; m++) {
+    const im = voxMesh[m];
+    if (!im) continue;
+    if (mHi[m] >= mLo[m]) upRange(im.instanceMatrix, mLo[m], mHi[m]);
+    if (cHi[m] >= cLo[m]) upRange(im.instanceColor, cLo[m], cHi[m]);
+    mLo[m] = cLo[m] = 1e9;
+    mHi[m] = cHi[m] = -1;
+  }
 }
 
 function building(x0, z0, w, d, h) {
@@ -169,40 +270,32 @@ function genCity(ci) {
   const cnt = [0, 0];
   totalVox = 0;
   for (let v = 0; v < NV; v++) {
+    vinst[v] = -1;
     if (!vk[v]) continue;
     totalVox++;
-    cnt[isGlow(vk[v]) ? 1 : 0]++;
+    cnt[(vm[v] = isGlow(vk[v]) ? 1 : 0)]++;
   }
   totalVox = Math.max(1, totalVox);
   const mats = [new THREE.MeshLambertMaterial(), new THREE.MeshBasicMaterial()];
   for (let m = 0; m < 2; m++) {
-    const im = new THREE.InstancedMesh(VBOX, mats[m], Math.max(1, cnt[m]));
-    im.count = cnt[m];
+    // 자리는 모든 블록만큼 잡아 두고, count 는 지금 보이는 블록 수만큼만 쓴다
+    const n = Math.max(1, cnt[m]),
+      im = new THREE.InstancedMesh(VBOX, mats[m], n);
+    // r128 의 setColorAt 은 색 버퍼를 count 크기로 만들기 때문에 전체 크기로 직접 만든다
+    im.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(n * 3), 3);
+    im.instanceColor.setUsage(THREE.DynamicDrawUsage);
+    im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    im.count = 0;
     im.castShadow = m === 0;
     im.receiveShadow = m === 0;
-    im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     voxMesh[m] = im;
     cityGroup.add(im);
   }
-  const ix = [0, 0];
-  for (let v = 0; v < NV; v++) {
-    const k = vk[v];
-    if (!k) {
-      vinst[v] = -1;
-      continue;
-    }
-    const m = isGlow(k) ? 1 : 0,
-      i = ix[m]++;
-    vm[v] = m;
-    vinst[v] = i;
-    const p = vPos(v);
-    _m.makeTranslation(p[0], p[1], p[2]);
-    voxMesh[m].setMatrixAt(i, _m);
-    voxMesh[m].setColorAt(i, baseColor(v, _c));
-  }
-  for (const im of voxMesh) {
-    im.instanceMatrix.needsUpdate = true;
-    if (im.instanceColor) im.instanceColor.needsUpdate = true;
+  for (let v = 0; v < NV; v++) if (vk[v] && exposed(v)) showVox(v);
+  // 새 메시는 처음 그릴 때 버퍼가 통째로 올라가므로 모아 둔 범위는 버린다
+  for (let m = 0; m < 2; m++) {
+    mLo[m] = cLo[m] = 1e9;
+    mHi[m] = cHi[m] = -1;
   }
   const gt = canvasTex(976, 976, drawGround(lots));
   const gp = mesh(
@@ -283,6 +376,7 @@ const MAXD = 2600;
 const debMesh = new THREE.InstancedMesh(UBOX, new THREE.MeshLambertMaterial(), MAXD);
 debMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
 debMesh.frustumCulled = false;
+debMesh.visible = false;
 scene.add(debMesh);
 for (let i = 0; i < MAXD; i++) {
   debMesh.setMatrixAt(i, ZERO);
@@ -290,10 +384,14 @@ for (let i = 0; i < MAXD; i++) {
 }
 const deb = new Array(MAXD).fill(null);
 let debHead = 0,
-  debCol = false;
+  debCol = false,
+  debAlive = 0; // 0이면 잔해 메시를 숨기고 매 프레임 행렬 업로드도 건너뛴다
 function spawnDeb(x, y, z, vx, vy, vz, s, color, life, fall) {
+  if (gfx.deb < 1 && Math.random() > gfx.deb) return;
   const i = debHead;
   debHead = (debHead + 1) % MAXD;
+  if (!deb[i]) debAlive++;
+  debMesh.visible = true;
   deb[i] = {
     x,
     y,
@@ -316,12 +414,14 @@ function spawnDeb(x, y, z, vx, vy, vz, s, color, life, fall) {
   debCol = true;
 }
 function updDeb(dt) {
+  if (!debAlive) return;
   for (let i = 0; i < MAXD; i++) {
     const d = deb[i];
     if (!d) continue;
     d.life -= dt;
     if (d.life <= 0) {
       deb[i] = null;
+      debAlive--;
       debMesh.setMatrixAt(i, ZERO);
       continue;
     }
@@ -374,6 +474,17 @@ function updDeb(dt) {
     debMesh.instanceColor.needsUpdate = true;
     debCol = false;
   }
+  if (!debAlive) debMesh.visible = false;
+}
+function clearDeb() {
+  for (let i = 0; i < MAXD; i++)
+    if (deb[i]) {
+      deb[i] = null;
+      debMesh.setMatrixAt(i, ZERO);
+    }
+  debMesh.instanceMatrix.needsUpdate = true;
+  debAlive = 0;
+  debMesh.visible = false;
 }
 
 /* ================= 폭발 ================= */
@@ -410,8 +521,8 @@ function destroyVoxel(v, ex, ey, ez, collapsed, spawn) {
     }
   }
   vk[v] = 0;
-  voxMesh[vm[v]].setMatrixAt(vinst[v], ZERO);
-  matDirty[vm[v]] = true;
+  hideVox(v);
+  revealAround(v);
   destroyedVox++;
   S.pts += val;
   S.earned += val;
@@ -458,11 +569,7 @@ function explodeAt(x, y, z, R, P, clusterN, bonus, big) {
             chainBudget--;
             pending.push({ t: rand(0.12, 0.5), x: cx, y: cy, z: cz, R: Math.max(1.3, R * 0.45), P: P * 0.55 });
           }
-        } else {
-          baseColor(v, _c).lerp(_c2.set(0x2a2018), clamp(1 - vhp[v] / vmhp[v], 0, 1) * 0.75);
-          voxMesh[vm[v]].setColorAt(vinst[v], _c);
-          colDirty[vm[v]] = true;
-        }
+        } else tintVox(v);
       }
   hitTrees(x, z, R);
   fx(x, y, z, R, big);
@@ -638,22 +745,7 @@ function collapse() {
   for (let v = LAYER; v < NV; v++)
     if (vk[v] && !seen[v]) {
       list.push(v);
-      const x = v % GX,
-        z = ((v / GX) | 0) % GZ,
-        y = (v / LAYER) | 0;
-      ext.push(
-        x === 0 ||
-          x === GX - 1 ||
-          z === 0 ||
-          z === GZ - 1 ||
-          y === GY - 1 ||
-          !vk[v - 1] ||
-          !vk[v + 1] ||
-          !vk[v - GX] ||
-          !vk[v + GX] ||
-          !vk[v - LAYER] ||
-          !vk[v + LAYER],
-      );
+      ext.push(vinst[v] >= 0); // 인스턴스가 있다 = 겉면이 드러나 있다
     }
   if (!list.length) return;
   const ne = ext.filter(Boolean).length,

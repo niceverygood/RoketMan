@@ -22,7 +22,7 @@ try {
   throw e;
 }
 engineOK = true;
-renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+// 픽셀 비율과 그림자 지도 크기는 아래 "그래픽 품질"의 applyGfx() 가 정한다
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
@@ -35,7 +35,6 @@ scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xfff0d0, 0.9);
 sun.position.set(-38, 80, -24);
 sun.castShadow = true;
-sun.shadow.mapSize.setScalar(Math.min(screen.width, screen.height) < 700 ? 1024 : 2048);
 Object.assign(sun.shadow.camera, { left: -42, right: 42, top: 42, bottom: -42, near: 1, far: 260 });
 sun.shadow.camera.updateProjectionMatrix();
 sun.shadow.bias = -0.0006;
@@ -86,6 +85,49 @@ function resize() {
   for (const p of POOLS) p.mat.uniforms.uScale.value = ps;
 }
 
+/* ================= 그래픽 품질 =================
+ * pr: 픽셀 비율 상한, shadow: 그림자 지도 크기(0이면 그림자 끔), fx: 불꽃·연기 파티클 비율, deb: 잔해 조각 비율.
+ * 휴대폰처럼 화면 짧은 변이 700px 미만이면 그림자 지도를 1024로 묶는다(0.2부터 있던 규칙). */
+const GFX = {
+  high: { name: '높음', pr: 2, shadow: 2048, fx: 1, deb: 1 },
+  mid: { name: '보통', pr: 1.5, shadow: 1024, fx: 0.6, deb: 0.7 },
+  low: { name: '낮음', pr: 1, shadow: 0, fx: 0.35, deb: 0.45 },
+};
+const GFX_ORDER = ['high', 'mid', 'low'];
+const smallScreen = Math.min(screen.width, screen.height) < 700;
+let gfxLevel = 'high',
+  gfx = GFX.high;
+/* 자동 모드의 첫 단계: 메모리·코어 수가 적은 기기는 낮게 시작하고, 예전에 끊겨서 낮춘 적이 있으면 그 단계부터 */
+function gfxStartLevel() {
+  if (gfxSave.pref !== 'auto') return gfxSave.pref;
+  const mem = navigator.deviceMemory || 8,
+    cores = navigator.hardwareConcurrency || 8,
+    guess = mem <= 2 || cores <= 2 ? 'low' : mem <= 4 || cores <= 4 ? 'mid' : 'high';
+  const learned = gfxSave.auto;
+  return learned && GFX_ORDER.indexOf(learned) > GFX_ORDER.indexOf(guess) ? learned : guess;
+}
+function applyGfx(level) {
+  gfxLevel = level;
+  gfx = GFX[level];
+  renderer.setPixelRatio(Math.min(gfx.pr, window.devicePixelRatio || 1));
+  const size = Math.min(gfx.shadow, smallScreen ? 1024 : 2048);
+  // 그림자를 켜고 끄면 three.js 가 조명 상태가 바뀐 것을 보고 셰이더를 알아서 다시 만든다
+  sun.castShadow = size > 0;
+  if (sun.shadow.map && (!size || sun.shadow.mapSize.x !== size)) {
+    sun.shadow.map.dispose();
+    sun.shadow.map = null;
+  }
+  if (size) sun.shadow.mapSize.setScalar(size);
+  resize();
+}
+/* 버퍼의 lo~hi 번째 항목만 GPU 로 올린다. 전체를 올리지 않아 매 프레임 업로드량이 줄어든다.
+ * WebGL2 의 bufferSubData 는 길이 0을 "끝까지"로 읽으므로 빈 범위로는 부르지 않는다. */
+function upRange(attr, lo, hi) {
+  attr.updateRange.offset = lo * attr.itemSize;
+  attr.updateRange.count = (hi - lo + 1) * attr.itemSize;
+  attr.needsUpdate = true;
+}
+
 /* ================= 파티클(불꽃·연기) ================= */
 const VS = `attribute float size;attribute vec4 col;varying vec4 vC;uniform float uScale;
 void main(){vC=col;vec4 mv=modelViewMatrix*vec4(position,1.0);gl_PointSize=clamp(size*uScale/-mv.z,1.0,700.0);gl_Position=projectionMatrix*mv;}`;
@@ -123,7 +165,7 @@ const FIRE = makePool(3000, true),
   POOLS = [FIRE, SMOKE];
 /* o: {drag, grav, flat(불꽃 색 변화 없이 고정색)} */
 function emit(pool, x, y, z, vx, vy, vz, life, s0, s1, r, g, b, a, o) {
-  if (pool.list.length >= pool.max) return;
+  if (pool.list.length >= pool.max || (gfx.fx < 1 && Math.random() > gfx.fx)) return;
   pool.list.push({
     x,
     y,
@@ -187,7 +229,11 @@ function updPool(pool, dt) {
     }
   }
   pool.geo.setDrawRange(0, w);
-  pool.pa.needsUpdate = pool.ca.needsUpdate = pool.sa.needsUpdate = true;
+  if (w) {
+    upRange(pool.pa, 0, w - 1);
+    upRange(pool.ca, 0, w - 1);
+    upRange(pool.sa, 0, w - 1);
+  }
 }
 
 /* ================= 폭발 구체·충격파 ================= */
@@ -255,12 +301,19 @@ function box(w, h, d, mat, x, y, z, parent) {
   m.scale.set(w, h, d);
   return m;
 }
+/* GPU 자원을 내린다. 도시는 출격마다 새로 만들기 때문에 여기서 빠뜨리면 판마다 메모리가 쌓인다.
+ * InstancedMesh 는 dispose() 를 불러야 인스턴스 행렬·색 버퍼가 내려가고, 재질을 지워도 그 텍스처(map)는 남는다. */
 function disposeTree(o) {
   o.traverse(n => {
     if (n.geometry && !n.geometry.userData.shared) n.geometry.dispose();
+    if (n.isInstancedMesh) n.dispose();
     if (n.material) {
       const ms = Array.isArray(n.material) ? n.material : [n.material];
-      for (const m of ms) if (!m.userData.shared) m.dispose();
+      for (const m of ms)
+        if (!m.userData.shared) {
+          if (m.map && !m.map.userData.shared) m.map.dispose();
+          m.dispose();
+        }
     }
   });
 }
@@ -373,6 +426,7 @@ function genPadEnv() {
   const concrete = shared(std(0xa9a69d));
   box(22, 0.42, 22, concrete, 0, 0.21, 0, padGroup);
   padTex = canvasTex(512, 512, drawPad);
+  padTex.userData.shared = true;
   const top = mesh(
     new THREE.PlaneGeometry(22, 22),
     shared(std(0xffffff, { map: padTex, roughness: 0.9 })),
@@ -488,6 +542,8 @@ function texs() {
   if (!bodyTex) {
     bodyTex = canvasTex(512, 1024, drawBody);
     hazTex = canvasTex(512, 64, drawHaz);
+    // 로켓을 다시 만들 때마다 같이 쓰므로 disposeTree 가 지우지 않게 한다
+    bodyTex.userData.shared = hazTex.userData.shared = true;
     hazTex.wrapS = THREE.RepeatWrapping;
   }
 }

@@ -269,6 +269,22 @@ const persist = () => {
     localStorage.setItem(SKEY, JSON.stringify(S));
   } catch (e) {}
 };
+/* 그래픽 설정은 기기마다 다르므로 게임 기록(S)과 다른 키에 둔다. 기록 초기화로도 지우지 않는다.
+ * pref: 'auto' | 'high' | 'mid' | 'low'.  auto: 자동 모드가 끊김을 보고 마지막으로 낮춘 단계('' = 아직 없음) */
+const GKEY = 'bomb-grow-lab-gfx';
+const gfxSave = { pref: 'auto', auto: '' };
+try {
+  const j = JSON.parse(localStorage.getItem(GKEY) || 'null');
+  if (j) {
+    if (['auto', 'high', 'mid', 'low'].includes(j.pref)) gfxSave.pref = j.pref;
+    if (['high', 'mid', 'low'].includes(j.auto)) gfxSave.auto = j.auto;
+  }
+} catch (e) {}
+const persistGfx = () => {
+  try {
+    localStorage.setItem(GKEY, JSON.stringify(gfxSave));
+  } catch (e) {}
+};
 const V = id => UP[id].val(S.lv[id]);
 const stats = () => ({
   radius: V('radius'),

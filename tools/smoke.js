@@ -6,6 +6,29 @@ const { chromium } = require('playwright');
 const { start } = require('./serve');
 
 const PORT = 8124;
+// 블록 인스턴스 장부 검사(page.evaluate 로 브라우저에서 돈다).
+// 살아 있는 블록은 "겉면이 드러남 ⇔ 인스턴스 있음"이어야 하고, 인스턴스 역참조·위치·count 가 맞아야 한다.
+const VOX_LEDGER = () => {
+  let bad = 0;
+  const shown = [0, 0];
+  for (let v = 0; v < NV; v++) {
+    if (!vk[v]) {
+      if (vinst[v] !== -1) bad++;
+      continue;
+    }
+    const has = vinst[v] >= 0;
+    if (exposed(v) !== has) bad++;
+    if (!has) continue;
+    const m = vm[v],
+      a = voxMesh[m].instanceMatrix.array,
+      o = vinst[v] * 16,
+      p = vPos(v);
+    shown[m]++;
+    if (instV[m][vinst[v]] !== v || a[o + 12] !== p[0] || a[o + 13] !== p[1] || a[o + 14] !== p[2]) bad++;
+  }
+  for (let m = 0; m < 2; m++) if (shown[m] !== voxMesh[m].count) bad++;
+  return { bad, drawn: shown[0] + shown[1], alive: totalVox - destroyedVox };
+};
 const VIEWPORTS = [
   { name: '데스크톱', width: 1280, height: 760 },
   { name: '휴대폰', width: 390, height: 844, mobile: true },
@@ -55,7 +78,10 @@ const VIEWPORTS = [
       const before = await page.evaluate(() => ({ pts: S.pts, lv: S.lv.radius }));
       await page.locator('.buy[data-id="radius"]').click();
       const after = await page.evaluate(() => ({ pts: S.pts, lv: S.lv.radius }));
-      check(after.lv === before.lv + 1 && after.pts < before.pts, `${tag} 폭발 반경 구매 → Lv ${after.lv}, 포인트 차감`);
+      check(
+        after.lv === before.lv + 1 && after.pts < before.pts,
+        `${tag} 폭발 반경 구매 → Lv ${after.lv}, 포인트 차감`,
+      );
 
       await page.locator('#go').click();
       check(
@@ -66,6 +92,11 @@ const VIEWPORTS = [
       await page.evaluate(() => enterStrike());
       const city = await page.evaluate(() => ({ phase, total: totalVox }));
       check(city.phase === 'strike' && city.total > 100, `${tag} 도시 생성 (블록 ${city.total}개)`);
+      const led0 = await page.evaluate(VOX_LEDGER);
+      check(
+        led0.bad === 0 && led0.drawn < led0.alive,
+        `${tag} 숨은 블록 제외: ${led0.alive}개 중 ${led0.drawn}개만 그림, 장부 오류 ${led0.bad}건`,
+      );
 
       await page.evaluate(() => {
         mainDropped = true;
@@ -75,6 +106,11 @@ const VIEWPORTS = [
       await page.waitForFunction(() => missiles.length === 0 && pending.length === 0, null, { timeout: 90000 });
       const hit = await page.evaluate(() => ({ blocks: destroyedVox, score: Math.floor(run.score) }));
       check(hit.blocks > 0 && hit.score > 0, `${tag} 탄두 명중 → 블록 ${hit.blocks}개 파괴, +${hit.score}P`);
+      const led1 = await page.evaluate(VOX_LEDGER);
+      check(
+        led1.bad === 0,
+        `${tag} 부서진 뒤 드러난 블록 장부 일치 (그림 ${led1.drawn}/${led1.alive}, 오류 ${led1.bad}건)`,
+      );
 
       await page.evaluate(() => endRun());
       check(await page.locator('#result').isVisible(), `${tag} 작전 보고서 표시`);
@@ -85,6 +121,44 @@ const VIEWPORTS = [
         await page.evaluate(() => JSON.parse(localStorage.getItem('bomb-grow-lab-v1')).runs === 1),
         `${tag} 저장 반영 (출격 1회 기록)`,
       );
+
+      // 그래픽 품질: '낮음'을 고르면 그림자를 끄고 픽셀 비율을 1로 낮추며, 게임 기록과 다른 키에 저장한다
+      await page.locator('#gfx button[data-q="low"]').click();
+      const low = await page.evaluate(() => ({
+        pr: renderer.getPixelRatio(),
+        want: Math.min(1, window.devicePixelRatio),
+        shadow: sun.castShadow,
+        saved: JSON.parse(localStorage.getItem('bomb-grow-lab-gfx')),
+        pressed: document.querySelector('#gfx [aria-pressed="true"]').dataset.q,
+      }));
+      check(
+        low.pr === low.want && !low.shadow && low.saved.pref === 'low' && low.pressed === 'low',
+        `${tag} 그래픽 낮음 → 그림자 끔, 픽셀 비율 ${low.pr}, 따로 저장`,
+      );
+      // 자동: 높음에서 시작해 20fps 프레임을 흘려 넣으면 한 단계(보통) 낮추고 알림을 띄운다
+      await page.locator('#gfx button[data-q="auto"]').click();
+      const auto = await page.evaluate(() => {
+        applyGfx('high');
+        resetFpsWatch();
+        let n = 0;
+        while (gfxLevel === 'high' && n < 400) {
+          watchFps(1 / 20);
+          n++;
+        }
+        return {
+          level: gfxLevel,
+          shadow: sun.castShadow,
+          saved: JSON.parse(localStorage.getItem('bomb-grow-lab-gfx')),
+          toast: !document.querySelector('#toast').hidden,
+          sec: n / 20,
+        };
+      });
+      check(
+        auto.level === 'mid' && auto.shadow && auto.saved.pref === 'auto' && auto.saved.auto === 'mid' && auto.toast,
+        `${tag} 그래픽 자동 → 끊기면 ${auto.sec}초 만에 보통으로 낮추고 알림`,
+      );
+      // 품질을 바꾼 뒤 셰이더를 다시 만드는 몇 프레임 동안 오류가 없는지 본다
+      await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
       check(errors.length === 0, `${tag} 콘솔 에러 0건${errors.length ? ' → ' + errors.slice(0, 3).join(' | ') : ''}`);
       await ctx.close();
     }
