@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>VFX 실험실</title>
+    <meta name="robots" content="noindex" />
+    <script>
+      // 실험실에서 부수고 번 포인트가 진짜 저장에 남지 않게, 게임 스크립트보다 먼저 저장 쓰기를 막는다.
+      (() => {
+        try {
+          const set = Storage.prototype.setItem;
+          Storage.prototype.setItem = function (k, v) {
+            if (k !== 'bomb-grow-lab-v1') set.call(this, k, v);
+          };
+        } catch (e) {}
+      })();
+    </script>
+    <style>
+      /* 실험실 패널. 색·글꼴은 css/style.css 의 :root 토큰을 그대로 쓴다(게임 스타일과 함께 불러옴) */
+      #lab {
+        position: fixed;
+        z-index: 60;
+        top: max(10px, env(safe-area-inset-top, 0px));
+        right: max(10px, env(safe-area-inset-right, 0px));
+        width: min(310px, calc(100vw - 20px));
+        max-height: calc(100dvh - 20px);
+        overflow-y: auto;
+        background: var(--glass);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        color: var(--fg);
+        font-family: var(--f-body);
+        font-size: 13px;
+        -webkit-backdrop-filter: blur(6px);
+        backdrop-filter: blur(6px);
+      }
+      body.shots #lab {
+        display: none;
+      }
+      body.lab #hud,
+      body.lab #prompt,
+      body.lab #plate {
+        display: none !important;
+      }
+      #lab summary {
+        cursor: pointer;
+        padding: 9px 12px;
+        font-family: var(--f-display);
+        font-size: 17px;
+        color: var(--hazard);
+      }
+      #lab .in {
+        padding: 0 12px 12px;
+        display: grid;
+        gap: 10px;
+      }
+      #lab h3 {
+        margin: 4px 0 0;
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--muted);
+      }
+      #lab .row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      #lab button,
+      #lab select {
+        font: inherit;
+        color: var(--fg);
+        background: var(--panel2);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 5px 8px;
+      }
+      #lab button:hover {
+        border-color: var(--hazard);
+      }
+      #lab button kbd {
+        font-family: var(--f-mono);
+        color: var(--hazard);
+        margin-right: 4px;
+      }
+      #lab label {
+        display: grid;
+        grid-template-columns: 1fr 52px;
+        gap: 2px 8px;
+        align-items: center;
+      }
+      #lab label input {
+        grid-column: 1 / -1;
+        width: 100%;
+        margin: 0;
+        accent-color: var(--hazard);
+      }
+      #lab label output {
+        font-family: var(--f-mono);
+        text-align: right;
+        color: var(--hazard);
+      }
+      #lab label.changed span {
+        color: var(--hot);
+      }
+      #lab .info {
+        font-family: var(--f-mono);
+        font-size: 11px;
+        color: var(--muted);
+        line-height: 1.5;
+        min-height: 3em;
+      }
+      #lab textarea {
+        width: 100%;
+        height: 110px;
+        font-family: var(--f-mono);
+        font-size: 11px;
+        color: var(--fg);
+        background: var(--bg);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        resize: vertical;
+      }
+      #lab .note {
+        margin: 0;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.5;
+      }
+    </style>
+  </head>
+  <body class="lab">
+    <aside id="lab" aria-label="VFX 실험실"></aside>
+    <!-- 게임 화면(index.html)의 마크업과 스크립트를 그대로 불러온 뒤 실험실 기능을 얹는다. npm start 로 띄워서 연다 -->
+    <script src="vfx-lab.js"></script>
+  </body>
+</html>

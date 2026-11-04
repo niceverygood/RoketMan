@@ -7,8 +7,9 @@
     "start": "node tools/serve.js 8123",
     "check": "node tools/check.js",
     "smoke": "node tools/smoke.js",
-    "format": "prettier --write \"js/*.js\" \"css/*.css\" index.html",
-    "format:check": "prettier --check \"js/*.js\" \"css/*.css\" index.html"
+    "shots": "node tools/vfx-shots.js",
+    "format": "prettier --write \"js/*.js\" \"css/*.css\" index.html \"tools/*.{js,html}\"",
+    "format:check": "prettier --check \"js/*.js\" \"css/*.css\" index.html \"tools/*.{js,html}\""
   },
   "devDependencies": {
     "playwright": "1.63.0",
