@@ -41,6 +41,7 @@ npm run format:check
   - GPU 없는 소프트웨어 WebGL로 돌아서 느립니다(1~3분). 발사 연출은 기다리지 않고 게임 함수를 직접 불러 건너뜁니다.
   - 새 화면이나 새 단계를 만들면 `tools/smoke.js`에 검사를 추가합니다.
 - 화면을 바꿨다면 `npm start`로 띄워서 데스크톱과 휴대폰 폭 둘 다 확인합니다. 페이지에 가로 스크롤이 생기면 안 됩니다.
+- 폭발 · 입자 · 손맛(`FEEL_TUNE`)을 바꿨다면 바꾸기 전과 후에 `npm run shots`를 돌려 `vfx-shots/`의 프레임 띠를 비교합니다. 값 조정은 VFX 실험실(`tools/vfx-lab.html`)에서 합니다.
 - 코드 스타일은 Prettier(`.prettierrc.json`, 한 줄 120자)를 따릅니다. 커밋 전에 `npm run format`을 실행합니다.
 
 ## 작업 방식

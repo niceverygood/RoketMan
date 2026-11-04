@@ -164,7 +164,37 @@
   /* ---------- 패널 ---------- */
   const LV_IDS = ['radius', 'power', 'cluster', 'chain', 'nuke'];
   /* 손맛 값 슬라이더: 키 → [이름, 최소, 최대, 간격]. 여기 없는 키는 현재 값으로 범위를 짐작한다 */
-  const TUNE_META = {};
+  const TUNE_META = {
+    stopBase: ['히트스톱 기본(초)', 0, 0.2, 0.005],
+    stopPerR: ['히트스톱 반경당', 0, 0.02, 0.0005],
+    stopMax: ['히트스톱 최대', 0, 0.3, 0.005],
+    stopNuke: ['히트스톱 메가톤', 0, 0.5, 0.01],
+    slowNuke: ['슬로모션 길이(메가톤)', 0, 3, 0.05],
+    slowK: ['슬로모션 시작 배속', 0.05, 1, 0.05],
+    trauma: ['폭발마다 충격', 0, 0.5, 0.01],
+    traumaPerR: ['폭발 충격 반경당', 0, 0.2, 0.005],
+    traumaHit: ['명중 충격', 0, 1, 0.01],
+    traumaHitPerR: ['명중 충격 반경당', 0, 0.2, 0.005],
+    traumaFade: ['충격 빠지는 속도(1초에)', 0.2, 5, 0.1],
+    shake: ['흔들림 폭(칸)', 0, 6, 0.1],
+    roll: ['화면 기울기(라디안)', 0, 0.15, 0.005],
+    shakeHz: ['흔들림 빠르기', 0.2, 3, 0.05],
+    kick: ['카메라 밀림', 0, 0.2, 0.005],
+    kickPerR: ['카메라 밀림 반경당', 0, 0.02, 0.0005],
+    kickMax: ['카메라 밀림 최대', 0, 0.3, 0.005],
+    kickNuke: ['카메라 밀림 메가톤', 0, 0.4, 0.01],
+    flash: ['섬광', 0, 1, 0.01],
+    flashPerR: ['섬광 반경당', 0, 0.1, 0.005],
+    flashMax: ['섬광 최대', 0, 1, 0.01],
+    flashNuke: ['섬광 메가톤', 0, 1, 0.01],
+    flashFade: ['섬광 사라지는 속도', 2, 60, 1],
+    dip: ['조명 낙차', 0, 0.9, 0.01],
+    dipPerR: ['조명 낙차 반경당', 0, 0.1, 0.005],
+    dipMax: ['조명 낙차 최대', 0, 0.9, 0.01],
+    dipNuke: ['조명 낙차 메가톤', 0, 0.9, 0.01],
+    dipNight: ['밤 도시 낙차 비율', 0, 1, 0.05],
+    dipFade: ['조명 돌아오는 속도', 0.5, 15, 0.5],
+  };
   const num = v => String(+(+v).toFixed(4));
   let tuneDefault = null,
     infoEl = null;
@@ -290,10 +320,10 @@
         out.value = '';
       });
       kids.push(
-        mk('h3', { textContent: '손맛 값 (FEEL_TUNE · 02-engine.js)' }),
-        ...sliders,
-        mk('div', { className: 'row' }, [copyB, resetB]),
-        out,
+        mk('details', {}, [
+          mk('summary', { className: 'sub', textContent: `손맛 값 ${sliders.length}개 (FEEL_TUNE · 02-engine.js)` }),
+          mk('div', { className: 'in' }, [...sliders, mk('div', { className: 'row' }, [copyB, resetB]), out]),
+        ]),
       );
     }
     kids.push(

@@ -586,7 +586,8 @@ function fx(x, y, z, R, big) {
     }
     addBlast('ball', x, R * 1.6, z, R * 0.3, R * 1.1, 2.4, 0xff7a30, 0.8);
   }
-  rig.shake = Math.min(big ? 4 : 2.2, rig.shake + (big ? 3.5 : 0.25 + R * 0.12));
+  addTrauma(big ? 1 : FEEL_TUNE.trauma + R * FEEL_TUNE.traumaPerR);
+  if (big) rig.shake = Math.max(rig.shake, 1.6); // 메가톤은 길게 이어지는 땅울림을 따로 얹는다
   sBoom(R, big);
 }
 
@@ -696,7 +697,7 @@ function collapse() {
       { drag: 0.9 },
     );
   }
-  rig.shake = Math.min(2.5, rig.shake + Math.min(1.6, 0.3 + n / 300));
+  addTrauma(Math.min(0.6, 0.15 + n / 500));
   sRumble(n);
   combo();
 }
@@ -750,8 +751,28 @@ function boomMissile(b) {
     b.acc,
     b.kind === 'nuke',
   );
+  if (b.kind !== 'mini') impactFeel(b);
+}
+/* 탄두가 맞은 순간의 손맛(값은 02-engine.js 의 FEEL_TUNE). 연쇄 · 자탄 폭발에는 쓰지 않는다.
+ * 자주 멈추면 끊겨 보이고, 섬광이 잦으면 눈이 아프기 때문이다 */
+function impactFeel(b) {
+  const T = FEEL_TUNE,
+    R = b.R,
+    nuke = b.kind === 'nuke';
+  addTrauma(T.traumaHit + R * T.traumaHitPerR);
+  feelHit({
+    stop: nuke ? T.stopNuke : Math.min(T.stopMax, T.stopBase + R * T.stopPerR),
+    slow: nuke ? T.slowNuke : 0,
+    kick: nuke ? T.kickNuke : Math.min(T.kickMax, T.kick + R * T.kickPerR),
+    flash: nuke ? T.flashNuke : Math.min(T.flashMax, T.flash + R * T.flashPerR),
+    dip: (nuke ? T.dipNuke : Math.min(T.dipMax, T.dip + R * T.dipPerR)) * (city.night ? T.dipNight : 1),
+    at: [b.x, b.y, b.z],
+    r: R,
+  });
+  buzz(nuke ? [70, 50, 160] : Math.round(Math.min(60, 22 + R * 2.5)));
 }
 function updMissiles(dt) {
+  if (dt <= 0) return; // 히트스톱 중에는 탄두도 멈춘다(꼬리 연기가 한 자리에 쌓이지 않게)
   for (let i = missiles.length - 1; i >= 0; i--) {
     const b = missiles[i];
     let alive = true;

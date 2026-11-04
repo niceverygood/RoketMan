@@ -37,6 +37,9 @@ npx playwright install chromium
 npm run check   # 문법 · 파일 간 이름 충돌 검사 (1초)
 npm run smoke   # 데스크톱 · 휴대폰 화면으로 한 판 자동 플레이 검사
 npm run format  # 코드 정리 (Prettier)
+npm run shots   # 폭발 프레임 띠 캡처 → vfx-shots/*.png (바꾸기 전과 후 비교용)
 ```
+
+- **VFX 실험실**: `npm start` 뒤 http://localhost:8123/tools/vfx-lab.html 에서 폭발을 바로 터뜨리고, 일시정지 · 한 프레임씩 보며, 손맛 값(히트스톱 · 흔들림 · 섬광)을 슬라이더로 맞춥니다. 진짜 저장은 바뀌지 않습니다.
 
 three.js는 MIT 라이선스이며, 원문 고지는 `vendor/three.r128.min.js` 머리말에 있습니다.
